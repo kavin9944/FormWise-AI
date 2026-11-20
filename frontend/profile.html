@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Student Profile – FormWise AI</title>
+
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <style>
+    /* Protection against unauthenticated flash */
+    body {
+      opacity: 0;
+      transition: opacity 0.25s ease-in;
+    }
+    body.auth-verified {
+      opacity: 1;
+    }
+
+    .profile-page-wrapper {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-color: var(--bg-page);
+    }
+
+    /* Navigation Bar */
+    .dash-nav {
+      background-color: #FFFFFF;
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-links-center {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .nav-links-center a {
+      font-size: 0.92rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      padding: 6px 0;
+      position: relative;
+    }
+
+    .nav-links-center a:hover,
+    .nav-links-center a.active {
+      color: var(--primary);
+    }
+
+    .nav-links-center a.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background-color: var(--primary);
+      border-radius: 2px;
+    }
+
+    .user-profile-menu {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .user-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-navy);
+      background-color: var(--bg-page);
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--border);
+    }
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2563EB, #1D4ED8);
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .btn-logout {
+      background-color: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      padding: 8px 16px;
+      border-radius: var(--radius-md);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-logout:hover {
+      background-color: #FEE2E2;
+      color: #DC2626;
+      border-color: #FCA5A5;
+    }
+
+    /* Main Container */
+    .profile-main {
+      flex: 1;
+      padding: 36px 0 64px 0;
+    }
+
+    .profile-container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    /* Page Header */
+    .profile-header {
+      margin-bottom: 28px;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .breadcrumb a:hover {
+      color: var(--primary);
+    }
+
+    .profile-header h1 {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: var(--text-navy);
+      margin-bottom: 8px;
+    }
+
+    .profile-header p {
+      font-size: 1rem;
+      color: var(--text-muted);
+    }
+
+    /* Notifications & Loading Banners */
+    .status-banner {
+      display: none;
+      padding: 14px 18px;
+      border-radius: var(--radius-md);
+      font-size: 0.92rem;
+      font-weight: 500;
+      margin-bottom: 24px;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-banner.loading {
+      display: flex;
+      background-color: #EFF6FF;
+      border: 1px solid #BFDBFE;
+      color: #1E40AF;
+    }
+
+    .status-banner.success {
+      background-color: #ECFDF5;
+      border: 1px solid #A7F3D0;
+      color: #065F46;
+    }
+
+    .status-banner.error {
+      background-color: #FEF2F2;
+      border: 1px solid #FECACA;
+      color: #991B1B;
+    }
+
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(37, 99, 235, 0.3);
+      border-top-color: #2563EB;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Profile Form Cards */
+    .profile-card {
+      background-color: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 32px 28px;
+      box-shadow: var(--shadow-subtle);
+      margin-bottom: 28px;
+    }
+
+    .card-section-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text-navy);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .card-section-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+
+    .form-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .form-grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 18px;
+    }
+
+    .form-group label {
+      font-size: 0.86rem;
+      font-weight: 600;
+      color: var(--text-navy);
+    }
+
+    .form-group .field-hint {
+      font-size: 0.78rem;
+      color: var(--text-light);
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      font-size: 0.95rem;
+      font-family: inherit;
+      color: var(--text-navy);
+      background-color: #FFFFFF;
+      transition: var(--transition);
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+
+    .form-control[readonly] {
+      background-color: var(--bg-alt);
+      color: var(--text-muted);
+      cursor: not-allowed;
+      border-color: #CBD5E1;
+    }
+
+    select.form-control {
+      appearance: none;
+      background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      background-size: 16px;
+      padding-right: 40px;
+    }
+
+    textarea.form-control {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    /* Actions Bottom Bar */
+    .profile-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 16px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 768px) {
+      .form-grid-2, .form-grid-3 {
+        grid-template-columns: 1fr;
+      }
+      .nav-links-center {
+        display: none;
+      }
+      .profile-card {
+        padding: 24px 20px;
+      }
+      .profile-actions {
+        flex-direction: column-reverse;
+      }
+      .profile-actions .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body class="profile-page-wrapper">
+
+  <!-- Navigation Bar -->
+  <header class="dash-nav">
+    <a href="dashboard.html" class="logo" aria-label="FormWise AI Dashboard">
+      <div class="logo-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <path d="M9 15h6"></path>
+          <path d="M9 11h3"></path>
+          <path d="M9 19h6"></path>
+        </svg>
+      </div>
+      <span class="logo-text">FormWise<span>AI</span></span>
+    </a>
+
+    <!-- Center Navigation Links -->
+    <nav class="nav-links-center">
+      <a href="dashboard.html">Dashboard</a>
+      <a href="upload.html">Upload Form</a>
+      <a href="assistant.html">AI Assistant</a>
+      <a href="profile.html" class="active">Student Profile</a>
+    </nav>
+
+    <!-- User Profile & Sign Out -->
+    <div class="user-profile-menu">
+      <div class="user-badge">
+        <div class="user-avatar" id="headerAvatar">U</div>
+        <span id="headerDisplayName">Student</span>
+      </div>
+      <button id="logoutBtn" class="btn-logout" title="Sign out of your account">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <polyline points="16 17 21 12 16 7"></polyline>
+          <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+        Sign Out
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Profile Content -->
+  <main class="profile-main">
+    <div class="profile-container">
+
+      <!-- Breadcrumbs & Header -->
+      <div class="profile-header">
+        <div class="breadcrumb">
+          <a href="dashboard.html">Dashboard</a>
+          <span>/</span>
+          <span>Student Profile</span>
+        </div>
+        <h1>Student Profile</h1>
+        <p>Keep your details current. FormWise AI uses these verified entries to autofill and validate applications accurately.</p>
+      </div>
+
+      <!-- Notification Banners -->
+      <div id="loadingBanner" class="status-banner loading" role="status">
+        <div class="spinner"></div>
+        <span>Loading your profile details from Cloud Firestore...</span>
+      </div>
+
+      <div id="successBanner" class="status-banner success" role="alert">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span id="successText">Profile updated successfully!</span>
+      </div>
+
+      <div id="errorBanner" class="status-banner error" role="alert">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span id="errorText">Error updating profile.</span>
+      </div>
+
+      <!-- Main Profile Form -->
+      <form id="profileForm">
+
+        <!-- 1. Personal Details Card -->
+        <section class="profile-card">
+          <h2 class="card-section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            Personal Details
+          </h2>
+          <p class="card-section-desc">Basic identification information as stated in your official certificates.</p>
+
+          <div class="form-grid-2">
+            <!-- Full Name -->
+            <div class="form-group">
+              <label for="name">Full Name *</label>
+              <input type="text" id="name" class="form-control" placeholder="Enter your full name" required>
+            </div>
+
+            <!-- Email Address (Read-only from Firebase Auth) -->
+            <div class="form-group">
+              <label for="email">Email Address <span class="field-hint">(From Authentication)</span></label>
+              <input type="email" id="email" class="form-control" readonly title="Email is managed by Firebase Authentication">
+            </div>
+          </div>
+
+          <div class="form-grid-3">
+            <!-- Phone Number -->
+            <div class="form-group">
+              <label for="phone">Phone Number</label>
+              <input type="tel" id="phone" class="form-control" placeholder="e.g. +91 9876543210">
+            </div>
+
+            <!-- Date of Birth -->
+            <div class="form-group">
+              <label for="dob">Date of Birth</label>
+              <input type="date" id="dob" class="form-control">
+            </div>
+
+            <!-- Gender -->
+            <div class="form-group">
+              <label for="gender">Gender</label>
+              <select id="gender" class="form-control">
+                <option value="">Select Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+                <option value="Prefer not to say">Prefer not to say</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <!-- 2. Academic Information Card -->
+        <section class="profile-card">
+          <h2 class="card-section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 10v6M2 10l10-5 10 5-10 5z"></path>
+              <path d="M6 12v5c3 3 9 3 12 0v-5"></path>
+            </svg>
+            Academic Information
+          </h2>
+          <p class="card-section-desc">Details of your ongoing or most recent educational institution.</p>
+
+          <div class="form-grid-2">
+            <!-- College Name -->
+            <div class="form-group">
+              <label for="college">College / Institution Name</label>
+              <input type="text" id="college" class="form-control" placeholder="Enter college or university name">
+            </div>
+
+            <!-- Department -->
+            <div class="form-group">
+              <label for="department">Department</label>
+              <input type="text" id="department" class="form-control" placeholder="e.g. Computer Science & Engineering">
+            </div>
+          </div>
+
+          <div class="form-grid-2">
+            <!-- Course -->
+            <div class="form-group">
+              <label for="course">Course / Degree</label>
+              <input type="text" id="course" class="form-control" placeholder="e.g. B.Tech / B.E. / B.Sc">
+            </div>
+
+            <!-- Current Academic Year -->
+            <div class="form-group">
+              <label for="academicYear">Current Academic Year</label>
+              <select id="academicYear" class="form-control">
+                <option value="">Select Academic Year</option>
+                <option value="1st Year">1st Year</option>
+                <option value="2nd Year">2nd Year</option>
+                <option value="3rd Year">3rd Year</option>
+                <option value="4th Year">4th Year</option>
+                <option value="5th Year">5th Year</option>
+                <option value="Post Graduate">Post Graduate</option>
+                <option value="Alumni / Graduated">Alumni / Graduated</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Residential Address Card -->
+        <section class="profile-card">
+          <h2 class="card-section-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            Residential Address
+          </h2>
+          <p class="card-section-desc">Permanent or communication address for application forms.</p>
+
+          <!-- Address -->
+          <div class="form-group">
+            <label for="address">Address Line</label>
+            <textarea id="address" class="form-control" rows="2" placeholder="House / Street / Area"></textarea>
+          </div>
+
+          <div class="form-grid-3">
+            <!-- City -->
+            <div class="form-group">
+              <label for="city">City / District</label>
+              <input type="text" id="city" class="form-control" placeholder="e.g. Chennai">
+            </div>
+
+            <!-- State -->
+            <div class="form-group">
+              <label for="state">State</label>
+              <input type="text" id="state" class="form-control" placeholder="e.g. Tamil Nadu">
+            </div>
+
+            <!-- PIN Code -->
+            <div class="form-group">
+              <label for="pincode">PIN Code</label>
+              <input type="text" id="pincode" class="form-control" placeholder="e.g. 600025" maxlength="10">
+            </div>
+          </div>
+        </section>
+
+        <!-- Form Action Buttons -->
+        <div class="profile-actions">
+          <a href="dashboard.html" class="btn btn-secondary">
+            Cancel
+          </a>
+          <button type="submit" id="saveProfileBtn" class="btn btn-primary btn-lg">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+              <polyline points="17 21 17 13 7 13 7 21"></polyline>
+              <polyline points="7 3 7 8 15 8"></polyline>
+            </svg>
+            Save Profile
+          </button>
+        </div>
+
+      </form>
+
+    </div>
+  </main>
+
+  <!-- ES Module Script Connection -->
+  <script type="module" src="js/profile.js"></script>
+</body>
+</html>

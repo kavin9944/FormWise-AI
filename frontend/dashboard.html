@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard – FormWise AI</title>
+
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <style>
+    /* Prevent content flash before authentication check completes */
+    body {
+      opacity: 0;
+      transition: opacity 0.25s ease-in;
+    }
+    body.auth-verified {
+      opacity: 1;
+    }
+
+    .dashboard-layout {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-color: var(--bg-page);
+    }
+
+    .dash-nav {
+      background-color: #FFFFFF;
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .user-profile-menu {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .user-badge {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-navy);
+      background-color: var(--bg-page);
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      border: 1px solid var(--border);
+    }
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2563EB, #1D4ED8);
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .btn-logout {
+      background-color: transparent;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      padding: 8px 16px;
+      border-radius: var(--radius-md);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-logout:hover {
+      background-color: #FEE2E2;
+      color: #DC2626;
+      border-color: #FCA5A5;
+    }
+
+    .dash-main {
+      flex: 1;
+      padding: 40px 0 64px 0;
+    }
+
+    .welcome-card {
+      background: linear-gradient(135deg, #1E3A8A 0%, #2563EB 100%);
+      color: #FFFFFF;
+      border-radius: var(--radius-xl);
+      padding: 36px 32px;
+      margin-bottom: 36px;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .welcome-card h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .welcome-card p {
+      font-size: 1.05rem;
+      color: #DBEAFE;
+      max-width: 650px;
+      line-height: 1.6;
+    }
+
+    .dash-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-bottom: 36px;
+    }
+
+    .action-card {
+      background-color: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      box-shadow: var(--shadow-subtle);
+      transition: var(--transition);
+      display: flex;
+      flex-direction: column;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .action-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-hover);
+      border-color: #BFDBFE;
+    }
+
+    .action-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: var(--radius-md);
+      background-color: var(--primary-light);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+    }
+
+    .action-card h3 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text-navy);
+      margin-bottom: 8px;
+    }
+
+    .action-card p {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+      flex-grow: 1;
+    }
+
+    .card-footer-link {
+      margin-top: 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    @media (max-width: 992px) {
+      .dash-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 640px) {
+      .dash-grid {
+        grid-template-columns: 1fr;
+      }
+      .dash-nav {
+        padding: 0 16px;
+      }
+      .user-badge span {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body class="dashboard-layout">
+
+  <!-- Dashboard Navigation -->
+  <header class="dash-nav">
+    <a href="index.html" class="logo" aria-label="FormWise AI Home">
+      <div class="logo-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <path d="M9 15h6"></path>
+          <path d="M9 11h3"></path>
+          <path d="M9 19h6"></path>
+        </svg>
+      </div>
+      <span class="logo-text">FormWise<span>AI</span></span>
+    </a>
+
+    <!-- User Profile & Sign Out -->
+    <div class="user-profile-menu">
+      <div class="user-badge">
+        <div class="user-avatar" id="userAvatar">U</div>
+        <span id="userDisplayName">Student</span>
+      </div>
+      <button id="logoutBtn" class="btn-logout" title="Sign out of your account">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <polyline points="16 17 21 12 16 7"></polyline>
+          <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+        Sign Out
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="dash-main">
+    <div class="container">
+      
+      <!-- Welcome Banner -->
+      <section class="welcome-card">
+        <h1 id="welcomeHeading">Welcome back! 👋</h1>
+        <p>Ready to fill out your forms? Upload any application document or start an AI-guided assistant session below.</p>
+      </section>
+
+      <!-- Quick Actions Grid -->
+      <section class="dash-grid">
+        
+        <!-- Action 1: Upload Form -->
+        <a href="upload.html" class="action-card">
+          <div class="action-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </div>
+          <h3>Upload Application Form</h3>
+          <p>Upload new PDF forms, scans, or templates to begin AI extraction and field mapping.</p>
+          <span class="card-footer-link">Upload Document &rarr;</span>
+        </a>
+
+        <!-- Action 2: AI Form Assistant -->
+        <a href="assistant.html" class="action-card">
+          <div class="action-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <h3>AI Form Assistant</h3>
+          <p>Get step-by-step guidance, bilingual explanations (English & தமிழ்), and smart auto-fill.</p>
+          <span class="card-footer-link">Start Assistant &rarr;</span>
+        </a>
+
+        <!-- Action 3: Profile & Saved Info -->
+        <a href="profile.html" class="action-card">
+          <div class="action-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+          </div>
+          <h3>Student Profile</h3>
+          <p>Manage your saved educational details, certificates, and autofill credentials safely.</p>
+          <span class="card-footer-link">View Profile &rarr;</span>
+        </a>
+
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ==========================================================================
+       Firebase Authentication Protection Module
+       ========================================================================== -->
+  <script type="module">
+    // 1. Import auth from the existing firebase.js module
+    import { auth } from "./js/firebase.js";
+
+    // 2. Import onAuthStateChanged from Firebase Auth SDK v13.3.0
+    import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js";
+
+    // Optional: import logoutUser from existing auth.js for the logout button
+    import { logoutUser } from "./js/auth.js";
+
+    // 3. Check authentication state on page load
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // 5. User is logged in: reveal dashboard and personalize greeting
+        document.body.classList.add("auth-verified");
+
+        const displayName = user.displayName || user.email.split("@")[0];
+        const userDisplayNameEl = document.getElementById("userDisplayName");
+        const userAvatarEl = document.getElementById("userAvatar");
+        const welcomeHeadingEl = document.getElementById("welcomeHeading");
+
+        if (userDisplayNameEl) userDisplayNameEl.textContent = displayName;
+        if (userAvatarEl) userAvatarEl.textContent = displayName.charAt(0).toUpperCase();
+        if (welcomeHeadingEl) welcomeHeadingEl.textContent = `Welcome back, ${displayName}! 👋`;
+
+      } else {
+        // 4. No user logged in: redirect immediately to login.html
+        window.location.replace("login.html");
+      }
+    });
+
+    // Logout button handler
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", async () => {
+        const result = await logoutUser();
+        if (result.success) {
+          window.location.replace("login.html");
+        } else {
+          alert("Logout failed: " + result.message);
+        }
+      });
+    }
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,24 @@
+venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+*.log
+
+# Uploads directory: preserve folder structure but ignore all uploaded files
+uploads/*
+!uploads/.gitkeep
+
+# Firebase & Cloud Secrets
+*serviceAccount*.json
+backend/*.json
+backend/serviceAccountKey.json
+secrets/
+
+# Binaries, OS files and archives
+ngrok.exe
+*.zip
+*.bak.zip
+.gemini/
+.DS_Store
+Thumbs.db

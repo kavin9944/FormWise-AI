@@ -1,0 +1,16 @@
+# FormWise AI – Netlify Edge Routing & API Proxy
+# ---------------------------------------------------------------------------
+# 1. API Proxy: Forward all frontend API requests to the hosted Flask backend
+# Update YOUR_BACKEND_URL with your hosted backend URL (e.g. https://formwise-ai-api.onrender.com)
+/api/*  https://YOUR_BACKEND_URL.onrender.com/api/:splat  200!
+/health https://YOUR_BACKEND_URL.onrender.com/health  200!
+
+# 2. Extensionless Routing: Allow navigation without typing .html
+/login        /login.html        200
+/register     /register.html     200
+/dashboard    /dashboard.html    200
+/upload       /upload.html       200
+/assistant    /assistant.html    200
+/profile      /profile.html      200
+/preview      /preview.html      200
+/validation   /validation.html   200

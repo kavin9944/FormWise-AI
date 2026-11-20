@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="FormWise AI - Smart AI Form Filling Assistant. Helping students and applicants understand and complete application forms effortlessly.">
+  <title>FormWise AI – Smart AI Form Filling Assistant</title>
+  
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ==================== Navigation Bar ==================== -->
+  <header class="navbar" id="navbar">
+    <div class="container">
+      <a href="#home" class="logo" aria-label="FormWise AI Home">
+        <div class="logo-icon">
+          <!-- Document / Sparkle Emblem -->
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <path d="M9 15h6"></path>
+            <path d="M9 11h3"></path>
+            <path d="M9 19h6"></path>
+          </svg>
+        </div>
+        <span class="logo-text">FormWise<span>AI</span></span>
+      </a>
+
+      <!-- Desktop & Mobile Navigation Links -->
+      <nav class="nav-menu" id="navMenu">
+        <a href="#home" class="nav-link">Home</a>
+        <a href="#features" class="nav-link">Features</a>
+        <a href="#how-it-works" class="nav-link">How It Works</a>
+        
+        <!-- Mobile Actions -->
+        <div class="nav-actions-mobile">
+          <div class="backend-status checking" style="justify-content: center; margin-bottom: 8px;">
+            <span class="status-dot"></span>
+            <span class="backend-status-text">Checking Backend...</span>
+          </div>
+          <a href="login.html" class="btn btn-secondary" style="width: 100%;">Login</a>
+          <a href="login.html" class="btn btn-primary" style="width: 100%;">Get Started</a>
+        </div>
+      </nav>
+
+      <!-- Desktop Action Buttons -->
+      <div class="nav-actions">
+        <!-- Backend Connection Status Indicator -->
+        <div id="backendStatus" class="backend-status checking">
+          <span class="status-dot" id="backendStatusDot"></span>
+          <span id="backendStatusText" class="backend-status-text">Checking Backend...</span>
+        </div>
+        <a href="login.html" class="btn-nav-login">Login</a>
+        <a href="login.html" class="btn btn-primary">Get Started</a>
+      </div>
+
+      <!-- Mobile Toggle Button -->
+      <button class="mobile-toggle" id="mobileToggle" aria-label="Toggle navigation menu" aria-expanded="false">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== Hero Section ==================== -->
+  <section class="hero" id="home">
+    <div class="container">
+      <div class="hero-grid">
+        
+        <!-- Hero Text -->
+        <div class="hero-content">
+          <div class="section-badge">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+            Smart AI Form Filling Assistant
+          </div>
+
+          <h1 class="hero-title">
+            Fill Forms <span class="gradient-text">Smarter.</span> Faster. Easier.
+          </h1>
+
+          <p class="hero-description">
+            Applying for college admissions, scholarships, competitive exams, or official certificates? FormWise AI helps students decipher complex questions, understand every mandatory requirement with bilingual guidance, and complete applications accurately without errors.
+          </p>
+
+          <div class="hero-cta">
+            <a href="login.html" class="btn btn-primary btn-lg">
+              Get Started
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </a>
+            <a href="#features" class="btn btn-secondary btn-lg">
+              Explore Features
+            </a>
+          </div>
+
+          <div class="hero-highlights">
+            <div class="highlight-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>Built for Students</span>
+            </div>
+            <div class="highlight-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>English & தமிழ்</span>
+            </div>
+            <div class="highlight-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>Zero-Error Verification</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hero Preview Mockup -->
+        <div class="hero-visual">
+          <div class="hero-card">
+            <div class="card-header-bar">
+              <div class="window-dots">
+                <span class="dot dot-red"></span>
+                <span class="dot dot-yellow"></span>
+                <span class="dot dot-green"></span>
+              </div>
+              <div class="card-status-badge">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                AI Assisted Form
+              </div>
+            </div>
+
+            <div class="mock-form">
+              <!-- Field 1 -->
+              <div class="mock-field">
+                <label>
+                  <span>Student Full Name (As per 10th Marksheet)</span>
+                  <span class="tamil-tag">மாணவர் பெயர்</span>
+                </label>
+                <div class="mock-input filled">
+                  <span>Ananya Sundaram</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- AI Bilingual Helper Box -->
+              <div class="mock-ai-tooltip">
+                <div class="tooltip-title">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                  </svg>
+                  FormWise AI Explanation:
+                </div>
+                <p>Enter your full name with initials exactly as printed on your secondary school certificate.</p>
+                <p class="tooltip-tamil">உங்கள் 10ஆம் வகுப்பு மதிப்பெண் சான்றிதழில் உள்ளவாறே உங்கள் முழுப் பெயரை உள்ளிடவும்.</p>
+              </div>
+
+              <!-- Field 2 -->
+              <div class="mock-field">
+                <label>
+                  <span>Category & Community Certificate</span>
+                  <span class="tamil-tag">சாதிச் சான்றிதழ் எண்</span>
+                </label>
+                <div class="mock-input filled">
+                  <span>BC / Verified Document #TN-2024-9182</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563EB" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Validation Bar -->
+              <div class="mock-status-bar">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                  </svg>
+                  <span>Validation: 0 Errors Found</span>
+                </div>
+                <span style="font-size: 0.76rem; font-weight: 700; color: #047857;">Ready to Export</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Floating Badges -->
+          <div class="floating-badge badge-1">
+            <span style="font-size: 1.15rem;">⚡</span>
+            <span>Autofill: 90% Faster</span>
+          </div>
+
+          <div class="floating-badge badge-2">
+            <span style="font-size: 1.15rem;">🎓</span>
+            <span>Student-Friendly AI</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Features Section ==================== -->
+  <section class="features-section" id="features">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge">Core Capabilities</div>
+        <h2>Powerful Features Designed for Students</h2>
+        <p>Everything you need to navigate, understand, and complete complicated application forms with clarity and precision.</p>
+      </div>
+
+      <div class="features-grid">
+        
+        <!-- Feature 1: AI Form Understanding -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
+            </svg>
+          </div>
+          <h3>AI Form Understanding</h3>
+          <p>Instantly analyzes and interprets complex questions, criteria, and ambiguous instructions in scholarship, exam, and admission forms.</p>
+          <span class="feature-tag">Smart Comprehension</span>
+        </div>
+
+        <!-- Feature 2: Smart Autofill -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+            </svg>
+          </div>
+          <h3>Smart Autofill</h3>
+          <p>Eliminate repetitive data entry across multiple college forms by automatically matching and filling verified student details.</p>
+          <span class="feature-tag">Time Saving</span>
+        </div>
+
+        <!-- Feature 3: Document Checklist -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 11l3 3L22 4"></path>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+            </svg>
+          </div>
+          <h3>Document Checklist</h3>
+          <p>Get a dynamic, customized list of required certificates, marksheet proofs, ID cards, and photo dimensions before you apply.</p>
+          <span class="feature-tag">Stay Prepared</span>
+        </div>
+
+        <!-- Feature 4: Error Detection -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+              <line x1="12" y1="9" x2="12" y2="13"></line>
+              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+          </div>
+          <h3>Error Detection</h3>
+          <p>AI flags missing mandatory fields, format inconsistencies, date mismatches, and potential errors before final submission.</p>
+          <span class="feature-tag">Zero Rejections</span>
+        </div>
+
+        <!-- Feature 5: English and Tamil Support -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </div>
+          <h3>English and Tamil Support</h3>
+          <p>Read clear explanations in both English and Tamil (தமிழ் விளக்கம்) side-by-side so no student is left behind due to language barriers.</p>
+          <span class="feature-tag">Bilingual Guidance</span>
+        </div>
+
+        <!-- Feature 6: PDF Download -->
+        <div class="feature-card">
+          <div class="feature-icon-wrapper">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+          </div>
+          <h3>PDF Download</h3>
+          <p>Export neatly populated, properly aligned, official PDF application forms ready for immediate printing or digital submission.</p>
+          <span class="feature-tag">Print Ready</span>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== How It Works Section ==================== -->
+  <section class="how-it-works-section" id="how-it-works">
+    <div class="container">
+      <div class="section-header">
+        <div class="section-badge">Simple 3-Step Process</div>
+        <h2>How It Works</h2>
+        <p>Complete your application forms smoothly with our guided, intelligent workflow.</p>
+      </div>
+
+      <div class="steps-grid">
+        
+        <!-- Step 1 -->
+        <div class="step-card">
+          <div class="step-number-badge">1</div>
+          <h3>Upload Your Form</h3>
+          <p>Upload any PDF, document image, or choose from our built-in library of admission and scholarship application templates.</p>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step-card">
+          <div class="step-number-badge">2</div>
+          <h3>Let AI Assist You</h3>
+          <p>Receive clear field-by-field explanations in English and Tamil, and utilize smart autofill to complete each section with ease.</p>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-card">
+          <div class="step-number-badge">3</div>
+          <h3>Review and Download</h3>
+          <p>Run automated error detection to ensure 100% accuracy, check your document list, and export your completed, print-ready PDF.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Call to Action Section ==================== -->
+  <section class="cta-section">
+    <div class="container">
+      <div class="cta-content">
+        <h2>Ready to Fill Forms With Confidence?</h2>
+        <p>Say goodbye to confusing paperwork and expensive internet café form filling charges. Start using FormWise AI today.</p>
+        <div class="cta-actions">
+          <a href="login.html" class="btn btn-cta-white btn-lg">
+            Get Started Now
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== Footer ==================== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-top">
+        
+        <!-- Brand Column -->
+        <div class="footer-brand">
+          <a href="#home" class="logo">
+            <div class="logo-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <path d="M9 15h6"></path>
+                <path d="M9 11h3"></path>
+                <path d="M9 19h6"></path>
+              </svg>
+            </div>
+            <span class="logo-text">FormWise<span>AI</span></span>
+          </a>
+          <p>
+            Smart AI Form Filling Assistant built to empower students with intelligent guidance, bilingual clarity, and seamless document completion.
+          </p>
+        </div>
+
+        <!-- Quick Links -->
+        <div class="footer-column">
+          <h4>Navigation</h4>
+          <div class="footer-links">
+            <a href="#home">Home</a>
+            <a href="#features">Features</a>
+            <a href="#how-it-works">How It Works</a>
+            <a href="login.html">Login</a>
+            <a href="login.html">Get Started</a>
+          </div>
+        </div>
+
+        <!-- Core Features -->
+        <div class="footer-column">
+          <h4>Features</h4>
+          <div class="footer-links">
+            <a href="#features">AI Form Understanding</a>
+            <a href="#features">Smart Autofill</a>
+            <a href="#features">Document Checklist</a>
+            <a href="#features">Error Detection</a>
+            <a href="#features">English & Tamil Support</a>
+            <a href="#features">PDF Download</a>
+          </div>
+        </div>
+
+        <!-- Project Info -->
+        <div class="footer-column">
+          <h4>Project Details</h4>
+          <div class="footer-links">
+            <div class="student-tag">
+              <span>🎓</span> Student Project Showcase
+            </div>
+            <div class="student-tag">
+              <span>⚡</span> HTML • CSS • JS • Flask
+            </div>
+            <span style="font-size: 0.85rem; color: #64748B;">FormWise AI Platform</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Bar -->
+      <div class="footer-bottom">
+        <p>&copy; 2026 FormWise AI. All rights reserved.</p>
+        <p>FormWise AI – Smart AI Form Filling Assistant</p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Backend API Integration -->
+  <script src="js/api.js"></script>
+
+  <!-- Optional Interactive Helpers -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const toggle = document.getElementById('mobileToggle');
+      const menu = document.getElementById('navMenu');
+      if (toggle && menu) {
+        toggle.addEventListener('click', () => {
+          menu.classList.toggle('active');
+        });
+      }
+    });
+  </script>
+</body>
+</html>
