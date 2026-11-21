@@ -32,6 +32,13 @@ from google import genai
 from google.genai import types
 from google.genai.errors import APIError, ClientError, ServerError
 
+try:
+    import httpx
+    _TIMEOUT_EXCEPTIONS = (TimeoutError, httpx.TimeoutException)
+except ImportError:
+    httpx = None
+    _TIMEOUT_EXCEPTIONS = (TimeoutError,)
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -52,6 +59,22 @@ GEMINI_TEMPERATURE: float = 0.2   # Low temperature for structured, deterministi
 
 # Logger — never log document content
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_log_message(msg: Any) -> str:
+    """Sanitizes technical details before logging, stripping API keys and tokens."""
+    s = str(msg)
+    s = re.sub(r"key=[A-Za-z0-9_.-]+", "key=[REDACTED]", s)
+    s = re.sub(r"AQ\.[A-Za-z0-9_.-]+", "AQ.[REDACTED]", s)
+    s = re.sub(r"AIza[A-Za-z0-9_.-]+", "AIza[REDACTED]", s)
+    s = re.sub(r"Bearer\s+[A-Za-z0-9_.\-+=]+", "Bearer [REDACTED]", s)
+    s = re.sub(
+        r"((?:x-goog-api-key|api[_-]?key)\s*[:=]\s*['\"]?)[A-Za-z0-9_.\-]+(['\"]?)",
+        r"\1[REDACTED]\2",
+        s,
+        flags=re.IGNORECASE
+    )
+    return s
 
 # ---------------------------------------------------------------------------
 # Gemini client — lazy initialisation on first use
@@ -376,7 +399,8 @@ def analyse_form(text: str, language: str = "both") -> dict:
         return {
             "success": False,
             "analysis": None,
-            "error": "AI analysis is not available. The service is not configured."
+            "error": "AI service is temporarily unavailable. Please try again shortly.",
+            "status_code": 503
         }
 
     language = (language or "both").strip().lower()
@@ -436,10 +460,14 @@ def analyse_form(text: str, language: str = "both") -> dict:
 
     try:
         client = _get_client()
-    except RuntimeError as cfg_err:
-        # Missing API key
-        logger.error("Gemini client configuration error (key not set).")
-        return {"success": False, "analysis": None, "error": str(cfg_err)}
+    except Exception as cfg_err:
+        logger.error("Gemini client configuration error: %s", _sanitize_log_message(cfg_err))
+        return {
+            "success": False,
+            "analysis": None,
+            "error": "AI service is temporarily unavailable. Please try again shortly.",
+            "status_code": 503
+        }
 
     models_to_try = [GEMINI_MODEL]
     for m in FALLBACK_MODELS:
@@ -448,6 +476,7 @@ def analyse_form(text: str, language: str = "both") -> dict:
 
     response = None
     last_error_msg = None
+    last_status_code = 503
 
     for attempt_idx, model_candidate in enumerate(models_to_try):
         try:
@@ -465,41 +494,71 @@ def analyse_form(text: str, language: str = "both") -> dict:
             is_auth = (code in (401, 403)) or ("UNAUTHENTICATED" in err_str) or ("PERMISSION_DENIED" in err_str)
             is_not_found = (code == 404) or ("NOT_FOUND" in err_str)
 
-            logger.error("Gemini ClientError on model '%s' (HTTP %s): %s", model_candidate, code or 400, ce)
+            logger.error("Gemini ClientError on model '%s' (HTTP %s): %s", model_candidate, code or 400, _sanitize_log_message(ce))
 
             if is_auth:
-                # Invalid credentials - cannot be resolved by switching models
+                # Upstream authorization / eligibility failure - return 503 service unavailable with professional message
                 return {
                     "success": False,
                     "analysis": None,
-                    "error": "AI service authentication failed. Invalid API credentials."
+                    "error": "AI service is temporarily unavailable. Please try again shortly.",
+                    "status_code": 503
                 }
             elif is_quota:
-                last_error_msg = "AI analysis quota exceeded for the configured model. Please try again later or check your API quota."
+                last_error_msg = "AI service is temporarily unavailable. Please try again shortly."
+                last_status_code = 503
                 if attempt_idx < len(models_to_try) - 1:
                     logger.warning("Quota exhausted for model '%s'. Attempting fallback model '%s'.", model_candidate, models_to_try[attempt_idx + 1])
                     continue
             elif is_not_found:
-                last_error_msg = f"AI model '{model_candidate}' is not available."
+                last_error_msg = "AI service is temporarily unavailable. Please try again shortly."
+                last_status_code = 502
                 if attempt_idx < len(models_to_try) - 1:
                     logger.warning("Model '%s' not found. Attempting fallback model '%s'.", model_candidate, models_to_try[attempt_idx + 1])
                     continue
             else:
-                last_error_msg = "AI analysis request was rejected. Check your input parameters."
+                last_error_msg = "AI service is temporarily unavailable. Please try again shortly."
+                last_status_code = 502
 
         except ServerError as se:
-            logger.error("Gemini ServerError on model '%s' (HTTP 5xx): %s", model_candidate, se)
+            code = getattr(se, "code", None)
+            err_str = str(se)
+            if code == 504 or "DEADLINE_EXCEEDED" in err_str or "deadline" in err_str.lower() or "timeout" in err_str.lower():
+                logger.error("Gemini ServerError deadline exceeded on model '%s' (HTTP 504): %s", model_candidate, _sanitize_log_message(se))
+                last_error_msg = "AI service is temporarily unavailable. Please try again shortly."
+                last_status_code = 504
+            else:
+                logger.error("Gemini ServerError on model '%s' (HTTP %s): %s", model_candidate, code or "5xx", _sanitize_log_message(se))
+                last_error_msg = "AI service is temporarily unavailable. Please try again shortly."
+                last_status_code = 502
+            if attempt_idx < len(models_to_try) - 1:
+                continue
+
+        except _TIMEOUT_EXCEPTIONS as te:
+            logger.error("Timeout during Gemini call on model '%s': %s", model_candidate, _sanitize_log_message(te))
             last_error_msg = "AI service is temporarily unavailable. Please try again shortly."
+            last_status_code = 504
             if attempt_idx < len(models_to_try) - 1:
                 continue
+
         except APIError as ae:
-            logger.error("Gemini APIError on model '%s': %s", model_candidate, ae)
-            last_error_msg = "An error occurred while communicating with the AI service."
+            code = getattr(ae, "code", None)
+            err_str = str(ae)
+            if code == 504 or "DEADLINE_EXCEEDED" in err_str or "deadline" in err_str.lower() or "timeout" in err_str.lower():
+                logger.error("Gemini API deadline exceeded on model '%s': %s", model_candidate, _sanitize_log_message(ae))
+                last_error_msg = "AI service is temporarily unavailable. Please try again shortly."
+                last_status_code = 504
+            else:
+                logger.error("Gemini APIError on model '%s': %s", model_candidate, _sanitize_log_message(ae))
+                last_error_msg = "AI service is temporarily unavailable. Please try again shortly."
+                last_status_code = 502
             if attempt_idx < len(models_to_try) - 1:
                 continue
+
         except Exception as exc:
-            logger.error("Unexpected error during Gemini call on model '%s': %s", model_candidate, exc)
-            last_error_msg = "An unexpected error occurred during AI analysis."
+            logger.error("Unexpected error during Gemini call on model '%s': %s", model_candidate, _sanitize_log_message(exc))
+            last_error_msg = "AI service is temporarily unavailable. Please try again shortly."
+            last_status_code = 503
             if attempt_idx < len(models_to_try) - 1:
                 continue
 
@@ -507,7 +566,8 @@ def analyse_form(text: str, language: str = "both") -> dict:
         return {
             "success": False,
             "analysis": None,
-            "error": last_error_msg or "AI analysis failed."
+            "error": last_error_msg or "AI service is temporarily unavailable. Please try again shortly.",
+            "status_code": last_status_code
         }
 
     # Parse the JSON response
@@ -525,11 +585,12 @@ def analyse_form(text: str, language: str = "both") -> dict:
             cleaned = re.sub(r",\s*([\]}])", r"\1", raw_text)
             analysis = json.loads(cleaned)
     except (json.JSONDecodeError, ValueError, AttributeError) as json_err:
-        logger.error("Gemini returned non-JSON or empty response: %s", json_err)
+        logger.error("Gemini returned non-JSON or empty response: %s", _sanitize_log_message(json_err))
         return {
             "success": False,
             "analysis": None,
-            "error": "AI returned an unreadable response. Please try again."
+            "error": "AI service is temporarily unavailable. Please try again shortly.",
+            "status_code": 502
         }
 
     # Check if Gemini itself reported an error
@@ -537,14 +598,16 @@ def analyse_form(text: str, language: str = "both") -> dict:
         return {
             "success": False,
             "analysis": None,
-            "error": analysis["error"]
+            "error": "AI service is temporarily unavailable. Please try again shortly.",
+            "status_code": 502
         }
 
     if not isinstance(analysis, dict):
         return {
             "success": False,
             "analysis": None,
-            "error": "AI returned an invalid data format."
+            "error": "AI service is temporarily unavailable. Please try again shortly.",
+            "status_code": 502
         }
 
     # Enrich and normalize fields for validation and backward compatibility

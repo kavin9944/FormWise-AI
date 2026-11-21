@@ -774,7 +774,10 @@ async function performAnalysis() {
     const data = await response.json();
 
     if (!response.ok || !data.success) {
-      throw new Error(data.error || `Server returned error status: ${response.status}`);
+      const fallbackMsg = [502, 503, 504].includes(response.status)
+        ? "AI service is temporarily unavailable. Please try again shortly."
+        : `Server returned error status: ${response.status}`;
+      throw new Error(data.error || fallbackMsg);
     }
 
     // Reset validation state on re-analysis, but keep existing student answers
@@ -936,14 +939,22 @@ async function loadChecklist() {
       body: JSON.stringify({ document_id: currentDocId })
     });
     const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error || "Checklist request failed.");
+    if (!resp.ok || !data.success) {
+      const fallbackMsg = [502, 503, 504].includes(resp.status)
+        ? "AI service is temporarily unavailable. Please try again shortly."
+        : "Checklist request failed.";
+      throw new Error(data.error || fallbackMsg);
+    }
 
     lastChecklistData = data;
     renderChecklist(data);
 
   } catch (err) {
     while (itemsEl.firstChild) itemsEl.removeChild(itemsEl.firstChild);
-    itemsEl.appendChild(createEl("div", "checklist-empty-state", `Could not load checklist: ${err.message}`));
+    const displayMsg = err.message && err.message.includes("AI service")
+      ? err.message
+      : `Could not load checklist: ${err.message}`;
+    itemsEl.appendChild(createEl("div", "checklist-empty-state", displayMsg));
   } finally {
     isLoadingChecklist = false;
   }
@@ -1170,7 +1181,12 @@ async function loadReadiness() {
       })
     });
     const data = await resp.json();
-    if (!resp.ok || !data.success) throw new Error(data.error || "Readiness request failed.");
+    if (!resp.ok || !data.success) {
+      const fallbackMsg = [502, 503, 504].includes(resp.status)
+        ? "AI service is temporarily unavailable. Please try again shortly."
+        : "Readiness request failed.";
+      throw new Error(data.error || fallbackMsg);
+    }
 
     lastReadinessData = data;
     renderReadiness(data);
@@ -1180,7 +1196,10 @@ async function loadReadiness() {
     const scoreEl = getReadinessScore();
     if (scoreEl) scoreEl.textContent = "–";
     const statusEl = getReadinessStatus();
-    if (statusEl) statusEl.textContent = `Could not load: ${err.message}`;
+    const displayMsg = err.message && err.message.includes("AI service")
+      ? err.message
+      : `Could not load: ${err.message}`;
+    if (statusEl) statusEl.textContent = displayMsg;
   } finally {
     isLoadingReadiness = false;
   }

@@ -607,28 +607,51 @@ def _check_validate_rate_limit(safe_uid: str) -> bool:
         return False
 
 
-def _get_document_analysis(safe_uid: str, safe_doc_id: str, target_file: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def _map_analysis_error_status(err_msg: Optional[str]) -> int:
+    """
+    Maps an analysis error message to an appropriate HTTP status code:
+    - 504 for timeouts
+    - 503 for unavailable AI services (auth / quota / unconfigured / provider outage)
+    - 502 for invalid or unreadable upstream provider responses
+    - 422 for unprocessable document text / extraction failures
+    - 500 for unexpected internal errors
+    """
+    if not err_msg:
+        return 503
+    msg = str(err_msg).lower()
+    if "timed out" in msg or "timeout" in msg or "deadline" in msg:
+        return 504
+    if "temporarily unavailable" in msg or "not configured" in msg or "quota" in msg or "authentication" in msg:
+        return 503
+    if "unreadable" in msg or "invalid data format" in msg or "rejected" in msg:
+        return 502
+    if "no readable text" in msg or "failed to extract" in msg:
+        return 422
+    return 503
+
+
+def _get_document_analysis(safe_uid: str, safe_doc_id: str, target_file: str) -> Tuple[Optional[Dict[str, Any]], Optional[str], int]:
     """
     Retrieves full form analysis (fields + required_documents) for a document.
     Reuses cached analysis if available; otherwise extracts text and calls analyse_form().
-    Returns (analysis_dict, error_message).
+    Returns (analysis_dict, error_message, status_code).
     """
     with _analysis_cache_lock:
         cached = _analysis_cache.get(safe_doc_id)
         if cached and isinstance(cached, dict) and "fields" in cached:
-            return cached, None
+            return cached, None, 200
 
     try:
         extraction_result = extract_document_text(target_file)
     except Exception:
-        return None, "An error occurred while reading the document."
+        return None, "An error occurred while reading the document.", 500
 
     if not extraction_result.get("success"):
-        return None, extraction_result.get("error", "Failed to extract text from the document.")
+        return None, extraction_result.get("error", "Failed to extract text from the document."), 422
 
     full_text = extraction_result.get("full_text", "")
     if not full_text.strip():
-        return None, "No readable text could be extracted from this document."
+        return None, "No readable text could be extracted from this document.", 422
 
     MAX_INPUT_CHARS = 20_000
     if len(full_text) > MAX_INPUT_CHARS:
@@ -637,7 +660,8 @@ def _get_document_analysis(safe_uid: str, safe_doc_id: str, target_file: str) ->
     # Run analysis using existing Gemini service
     result = analyse_form(text=full_text, language="both")
     if not result.get("success"):
-        return None, result.get("error", "AI form analysis failed.")
+        status_code = result.get("status_code") or _map_analysis_error_status(result.get("error"))
+        return None, result.get("error", "AI service is temporarily unavailable. Please try again shortly."), status_code
 
     analysis_data = result.get("analysis") or {}
 
@@ -651,15 +675,15 @@ def _get_document_analysis(safe_uid: str, safe_doc_id: str, target_file: str) ->
         new_status="analysed"
     )
 
-    return analysis_data, None
+    return analysis_data, None, 200
 
 
-def _get_document_fields(safe_uid: str, safe_doc_id: str, target_file: str):
+def _get_document_fields(safe_uid: str, safe_doc_id: str, target_file: str) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str], int]:
     """Retrieves form field definitions for a document."""
-    analysis_data, err = _get_document_analysis(safe_uid, safe_doc_id, target_file)
+    analysis_data, err, status_code = _get_document_analysis(safe_uid, safe_doc_id, target_file)
     if err or not analysis_data:
-        return None, err
-    return analysis_data.get("fields", []), None
+        return None, err, status_code
+    return analysis_data.get("fields", []), None, 200
 
 
 # ---------------------------------------------------------------------------
@@ -856,7 +880,7 @@ def analyse_document():
     if not GEMINI_API_KEY:
         return jsonify({
             "success": False,
-            "error": "AI analysis is not available. The service is not configured on this server."
+            "error": "AI service is temporarily unavailable. Please try again shortly."
         }), 503
 
     safe_doc_id = re.sub(r"[^a-zA-Z0-9_\-]", "", document_id)
@@ -906,10 +930,11 @@ def analyse_document():
 
     result = analyse_form(text=full_text, language=language)
     if not result.get("success"):
+        status_code = result.get("status_code") or _map_analysis_error_status(result.get("error"))
         return jsonify({
             "success": False,
-            "error": result.get("error", "AI analysis failed.")
-        }), 500
+            "error": result.get("error", "AI service is temporarily unavailable. Please try again shortly.")
+        }), status_code
 
     analysis_data = result.get("analysis")
     if analysis_data:
@@ -1017,12 +1042,12 @@ def validate_student_form():
             "error": "Document not found in user storage."
         }), 404
 
-    fields, err_msg = _get_document_fields(safe_uid, safe_doc_id, target_file)
+    fields, err_msg, status_code = _get_document_fields(safe_uid, safe_doc_id, target_file)
     if err_msg or not isinstance(fields, list):
         return jsonify({
             "success": False,
-            "error": err_msg or "Failed to retrieve form field definitions."
-        }), 500
+            "error": err_msg or "AI service is temporarily unavailable. Please try again shortly."
+        }), status_code
 
     normalized_answers = dict(answers)
     for field_def in fields:
@@ -1113,12 +1138,12 @@ def get_document_checklist():
         }), 404
 
     # 4. Retrieve form analysis
-    analysis_data, err_msg = _get_document_analysis(safe_uid, safe_doc_id, target_file)
+    analysis_data, err_msg, status_code = _get_document_analysis(safe_uid, safe_doc_id, target_file)
     if err_msg or not isinstance(analysis_data, dict):
         return jsonify({
             "success": False,
-            "error": err_msg or "Failed to retrieve form analysis."
-        }), 500
+            "error": err_msg or "AI service is temporarily unavailable. Please try again shortly."
+        }), status_code
 
     required_documents = analysis_data.get("required_documents", [])
     if not isinstance(required_documents, list):
@@ -1212,12 +1237,12 @@ def confirm_checklist_match():
         }), 404
 
     # 4. Retrieve form analysis
-    analysis_data, err_msg = _get_document_analysis(safe_uid, safe_doc_id, target_file)
+    analysis_data, err_msg, status_code = _get_document_analysis(safe_uid, safe_doc_id, target_file)
     if err_msg or not isinstance(analysis_data, dict):
         return jsonify({
             "success": False,
-            "error": err_msg or "Failed to retrieve form analysis."
-        }), 500
+            "error": err_msg or "AI service is temporarily unavailable. Please try again shortly."
+        }), status_code
 
     required_documents = analysis_data.get("required_documents", [])
     if not isinstance(required_documents, list):
@@ -1362,12 +1387,12 @@ def calculate_application_readiness():
         }), 404
 
     # 4. Retrieve form analysis
-    analysis_data, err_msg = _get_document_analysis(safe_uid, safe_doc_id, target_file)
+    analysis_data, err_msg, status_code = _get_document_analysis(safe_uid, safe_doc_id, target_file)
     if err_msg or not isinstance(analysis_data, dict):
         return jsonify({
             "success": False,
-            "error": err_msg or "Failed to retrieve form analysis."
-        }), 500
+            "error": err_msg or "AI service is temporarily unavailable. Please try again shortly."
+        }), status_code
 
     fields = analysis_data.get("fields", [])
     required_documents = analysis_data.get("required_documents", [])
@@ -1483,9 +1508,9 @@ def preview_form():
     if not target_file:
         return jsonify({"success": False, "error": "Document not found in user storage."}), 404
 
-    analysis_data, err_msg = _get_document_analysis(safe_uid, safe_doc_id, target_file)
+    analysis_data, err_msg, status_code = _get_document_analysis(safe_uid, safe_doc_id, target_file)
     if err_msg or not isinstance(analysis_data, dict):
-        return jsonify({"success": False, "error": err_msg or "Failed to retrieve form analysis."}), 500
+        return jsonify({"success": False, "error": err_msg or "AI service is temporarily unavailable. Please try again shortly."}), status_code
 
     fields = analysis_data.get("fields", [])
     if not isinstance(fields, list):
@@ -1552,9 +1577,9 @@ def download_pdf():
     if not target_file:
         return jsonify({"success": False, "error": "Document not found in user storage."}), 404
 
-    analysis_data, err_msg = _get_document_analysis(safe_uid, safe_doc_id, target_file)
+    analysis_data, err_msg, status_code = _get_document_analysis(safe_uid, safe_doc_id, target_file)
     if err_msg or not isinstance(analysis_data, dict):
-        return jsonify({"success": False, "error": err_msg or "Failed to retrieve form analysis."}), 500
+        return jsonify({"success": False, "error": err_msg or "AI service is temporarily unavailable. Please try again shortly."}), status_code
 
     fields = analysis_data.get("fields", [])
     if not isinstance(fields, list):
