@@ -104,6 +104,270 @@ function getReadinessBreakdown() { return document.getElementById("readinessBrea
 function getReadinessActions()   { return document.getElementById("readinessActionsBlock"); }
 
 // ---------------------------------------------------------------------------
+// Form Answers Draft Persistence Service (F-03)
+// ---------------------------------------------------------------------------
+let _saveDebounceTimer = null;
+let _currentSavePromise = null;
+let _hasPendingSave = false;
+
+function _updateSaveStatusIndicator(statusObj) {
+  let indicator = document.getElementById("draftSaveStatusIndicator");
+  if (!indicator) {
+    const badgeRow = document.querySelector(".doc-badge-row");
+    if (badgeRow) {
+      indicator = document.createElement("span");
+      indicator.id = "draftSaveStatusIndicator";
+      indicator.className = "badge-pill";
+      indicator.style.fontSize = "0.78rem";
+      indicator.style.marginLeft = "6px";
+      indicator.style.transition = "all 0.3s ease";
+      badgeRow.appendChild(indicator);
+    }
+  }
+  if (!indicator) return;
+
+  if (statusObj.saving) {
+    indicator.style.display = "inline-block";
+    indicator.className = "badge-pill";
+    indicator.style.backgroundColor = "#F1F5F9";
+    indicator.style.color = "#64748B";
+    indicator.style.border = "1px solid #CBD5E1";
+    indicator.textContent = "⏳ Saving...";
+    indicator.title = "Persisting draft answers...";
+  } else if (statusObj.success && statusObj.cloud_synced) {
+    indicator.style.display = "inline-block";
+    indicator.className = "badge-pill badge-saved";
+    indicator.style.backgroundColor = "#F0FDF4";
+    indicator.style.color = "#16A34A";
+    indicator.style.border = "1px solid #BBF7D0";
+    indicator.textContent = "✓ Cloud Saved";
+    indicator.title = "Draft answers securely saved to cloud database.";
+  } else if (statusObj.success && !statusObj.cloud_synced) {
+    indicator.style.display = "inline-block";
+    indicator.className = "badge-pill badge-warning";
+    indicator.style.backgroundColor = "#FEFCE8";
+    indicator.style.color = "#CA8A04";
+    indicator.style.border = "1px solid #FEF08A";
+    indicator.textContent = "⚠️ Local Cache Only";
+    indicator.title = "Saved in temporary local cache. Will sync once cloud database is available.";
+  } else if (statusObj.success === false) {
+    indicator.style.display = "inline-block";
+    indicator.className = "badge-pill badge-error";
+    indicator.style.backgroundColor = "#FEF2F2";
+    indicator.style.color = "#DC2626";
+    indicator.style.border = "1px solid #FECACA";
+    indicator.textContent = "✕ Save Error";
+    indicator.title = statusObj.error || "Failed to persist draft answers.";
+  }
+}
+
+function _syncAnswersToInputs() {
+  Object.keys(studentAnswers).forEach((fieldId) => {
+    const inputEl = document.getElementById(`input_${fieldId}`);
+    if (inputEl && inputEl.value !== studentAnswers[fieldId]) {
+      inputEl.value = studentAnswers[fieldId] || "";
+    }
+  });
+}
+
+async function loadSavedAnswers(docId) {
+  if (!docId) return;
+
+  // 1. Restore from sessionStorage fallback immediately
+  try {
+    const localDraft = sessionStorage.getItem(`formwise_answers_${docId}`) || sessionStorage.getItem("formwise_preview_answers");
+    if (localDraft) {
+      const parsed = JSON.parse(localDraft);
+      if (parsed && typeof parsed === "object") {
+        Object.assign(studentAnswers, parsed);
+        _syncAnswersToInputs();
+      }
+    }
+  } catch (e) {
+    console.warn("Local storage draft note:", e);
+  }
+
+  // 2. Fetch authenticated draft from backend
+  const currentUser = auth.currentUser;
+  if (!currentUser) return;
+
+  try {
+    const token = await currentUser.getIdToken();
+    const resp = await fetch(`${API_BASE_URL}/api/answers?document_id=${encodeURIComponent(docId)}`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.success && data.answers && typeof data.answers === "object") {
+        // Merge server answers into studentAnswers
+        Object.assign(studentAnswers, data.answers);
+        _syncAnswersToInputs();
+        // Update save status indicator
+        _updateSaveStatusIndicator({ success: true, cloud_synced: data.cloud_synced });
+        // Keep sessionStorage synchronized
+        try {
+          sessionStorage.setItem(`formwise_answers_${docId}`, JSON.stringify(studentAnswers));
+          sessionStorage.setItem("formwise_preview_answers", JSON.stringify(studentAnswers));
+        } catch (e) { /* ignore */ }
+      }
+    }
+  } catch (err) {
+    console.warn("Could not retrieve draft answers from server:", err);
+  }
+}
+
+async function saveAnswersDraft() {
+  if (!currentDocId) return;
+  const currentUser = auth.currentUser;
+  if (!currentUser) return;
+
+  // Sync latest in-DOM values into studentAnswers
+  if (lastAnalysisData?.analysis?.fields) {
+    lastAnalysisData.analysis.fields.forEach((f) => {
+      const fid = String(f.field_id || f.field_name);
+      const inputEl = document.getElementById(`input_${fid}`);
+      if (inputEl) {
+        studentAnswers[fid] = inputEl.value.trim();
+      }
+    });
+  }
+
+  // Always update sessionStorage fallback immediately
+  try {
+    sessionStorage.setItem(`formwise_answers_${currentDocId}`, JSON.stringify(studentAnswers));
+    sessionStorage.setItem("formwise_preview_answers", JSON.stringify(studentAnswers));
+  } catch (e) {
+    /* ignore storage errors */
+  }
+
+  if (Object.keys(studentAnswers).length === 0) return;
+
+  // If a save is already in-flight, mark pending so another save runs immediately after
+  if (_currentSavePromise) {
+    _hasPendingSave = true;
+    return _currentSavePromise;
+  }
+
+  _currentSavePromise = (async () => {
+    try {
+      while (true) {
+        _hasPendingSave = false;
+        _updateSaveStatusIndicator({ saving: true });
+
+        // Copy snapshot of answers for this iteration
+        const snapshot = Object.assign({}, studentAnswers);
+        const token = await currentUser.getIdToken();
+
+        const resp = await fetch(`${API_BASE_URL}/api/answers`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            document_id: currentDocId,
+            answers: snapshot
+          })
+        });
+
+        if (resp.ok) {
+          const data = await resp.json();
+          _updateSaveStatusIndicator({
+            success: true,
+            cloud_synced: data.cloud_synced === true,
+            storage_mode: data.storage_mode
+          });
+        } else {
+          _updateSaveStatusIndicator({ success: false, error: "Save error" });
+        }
+
+        // If new keystrokes or changes arrived during active network request, loop and persist them
+        if (!_hasPendingSave) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    } catch (err) {
+      console.warn("Auto-save answer draft error:", err);
+      _updateSaveStatusIndicator({ success: false, error: err.message });
+    } finally {
+      _currentSavePromise = null;
+    }
+  })();
+
+  return _currentSavePromise;
+}
+
+function triggerDebouncedSave() {
+  if (_saveDebounceTimer) clearTimeout(_saveDebounceTimer);
+  _saveDebounceTimer = setTimeout(() => {
+    saveAnswersDraft();
+  }, 800);
+}
+
+async function populateDocumentSelector(user) {
+  if (!noDocBanner || !user) return;
+  try {
+    const token = await user.getIdToken();
+    const resp = await fetch(`${API_BASE_URL}/api/documents`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.success || !Array.isArray(data.documents) || data.documents.length === 0) return;
+
+    let selectorWrapper = document.getElementById("docSelectorWrapper");
+    if (!selectorWrapper) {
+      selectorWrapper = createEl("div", "doc-selector-wrapper");
+      selectorWrapper.id = "docSelectorWrapper";
+      selectorWrapper.style.cssText = "margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;";
+
+      const selectLabel = createEl("span", "", "Or select one of your uploaded forms: ");
+      selectLabel.style.fontWeight = "600";
+      selectorWrapper.appendChild(selectLabel);
+
+      const selectEl = document.createElement("select");
+      selectEl.id = "docSelectDropdown";
+      selectEl.style.cssText = "padding: 6px 12px; border: 1px solid #D97706; border-radius: 6px; font-size: 0.88rem; background: #FFF;";
+
+      data.documents.forEach((d) => {
+        const opt = document.createElement("option");
+        opt.value = d.document_id;
+        opt.textContent = `${d.form_title || d.original_filename} (${d.file_type || 'PDF'})`;
+        selectEl.appendChild(opt);
+      });
+      selectorWrapper.appendChild(selectEl);
+
+      const openBtn = document.createElement("button");
+      openBtn.className = "btn";
+      openBtn.textContent = "Open Form →";
+      openBtn.style.cssText = "padding: 6px 14px; background: #D97706; color: #FFF; border: none; border-radius: 6px; font-size: 0.88rem; font-weight: 600; cursor: pointer;";
+      openBtn.addEventListener("click", () => {
+        const chosenId = selectEl.value;
+        if (chosenId) {
+          window.location.href = `assistant.html?doc_id=${encodeURIComponent(chosenId)}`;
+        }
+      });
+      selectorWrapper.appendChild(openBtn);
+
+      const bannerContentDiv = noDocBanner.querySelector("div");
+      if (bannerContentDiv) {
+        bannerContentDiv.appendChild(selectorWrapper);
+      }
+    }
+  } catch (err) {
+    console.warn("Could not load documents for selector:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
 
@@ -416,6 +680,7 @@ function renderAnalysisResults(data, requestedLanguage) {
     inputEl.addEventListener("input", (e) => {
       studentAnswers[fieldId] = e.target.value;
       inputEl.classList.remove("input-error");
+      triggerDebouncedSave();
     });
 
     answerSection.appendChild(inputEl);
@@ -578,6 +843,7 @@ async function autofillFromProfile() {
       if (filledFields.length > 0) {
         autofillBannerText.textContent = `Autofilled ${filledFields.length} field(s) from your profile: ${filledFields.join(", ")}. You can review and edit any value.`;
         autofillBanner.style.display = "flex";
+        saveAnswersDraft();
       } else {
         autofillBannerText.textContent = "No matching profile fields found to autofill (or fields already contain answers).";
         autofillBanner.style.display = "flex";
@@ -706,6 +972,9 @@ async function performValidation() {
       validationSummaryCard.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
+    // Persist latest validated answers draft to server
+    saveAnswersDraft();
+
   } catch (err) {
     console.error("Validation error:", err);
     showError(err.message || "An unexpected error occurred while validating your answers.");
@@ -822,15 +1091,21 @@ if (validateBtnBottom) {
   validateBtnBottom.addEventListener("click", performValidation);
 }
 
-function navigateToPreview() {
+async function navigateToPreview() {
   if (!currentDocId) {
     showError("Please select a document first.");
     return;
   }
   try {
     sessionStorage.setItem("formwise_preview_answers", JSON.stringify(studentAnswers));
+    sessionStorage.setItem(`formwise_answers_${currentDocId}`, JSON.stringify(studentAnswers));
   } catch (e) {
     console.warn("Could not save answers to sessionStorage:", e);
+  }
+  try {
+    await saveAnswersDraft();
+  } catch (e) {
+    /* fallback to sessionStorage already preserved */
   }
   window.location.href = `preview.html?doc_id=${encodeURIComponent(currentDocId)}`;
 }
@@ -874,10 +1149,12 @@ onAuthStateChanged(auth, (user) => {
       if (noDocBanner) noDocBanner.style.display = "flex";
       if (displayDocId) displayDocId.textContent = "None";
       if (analyseBtn) analyseBtn.disabled = true;
+      populateDocumentSelector(user);
     } else {
       if (noDocBanner) noDocBanner.style.display = "none";
       if (displayDocId) displayDocId.textContent = currentDocId;
       if (analyseBtn) analyseBtn.disabled = false;
+      loadSavedAnswers(currentDocId);
     }
 
   } else {

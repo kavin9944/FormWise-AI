@@ -66,7 +66,7 @@ FormWise AI uses a decoupled **Two-Tier Public Architecture**:
    - **Root Directory**: (Leave blank or `.`)
    - **Runtime**: `Python 3`
    - **Build Command**: `pip install -r requirements-prod.txt`
-   - **Start Command**: `gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120`
+   - **Start Command**: `gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120`
    - **Instance Type**: `Free`
 6. Add **Secret File**:
    - In the **Environment** tab, scroll to **Secret Files**.

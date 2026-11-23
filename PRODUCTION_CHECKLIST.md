@@ -11,7 +11,7 @@ Use this checklist to track every step of the Phase 9 public deployment process.
 - [x] All 6 client JavaScript files validated without syntax errors (`node -c`).
 - [x] All 10 Python backend files compiled cleanly (`python -m py_compile`).
 - [x] `requirements-prod.txt` created with `gunicorn>=21.2.0`.
-- [x] `Procfile` created specifying `gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120`.
+- [x] `Procfile` created specifying `gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120`.
 - [x] `netlify.toml` and `frontend/_redirects` created with proxy rules for API routes.
 - [x] Zero private keys, passwords, or `.env` files committed to Git.
 - [x] Clean submission archive generated (`FormWise-AI-Team-Edition.zip`, 156 KB).
@@ -23,7 +23,7 @@ Use this checklist to track every step of the Phase 9 public deployment process.
 - [ ] Git repository connected to cloud host.
 - [ ] Runtime set to Python 3.11+.
 - [ ] Build command configured: `pip install -r requirements-prod.txt`.
-- [ ] Start command verified: `gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120`.
+- [ ] Start command verified: `gunicorn --chdir backend app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120`.
 - [ ] Secret file uploaded: `serviceAccountKey.json` mounted at `/etc/secrets/serviceAccountKey.json`.
 - [ ] Environment variable set: `FIREBASE_SERVICE_ACCOUNT_PATH=/etc/secrets/serviceAccountKey.json`.
 - [ ] Environment variable set: `GEMINI_API_KEY=<valid_production_gemini_key>`.

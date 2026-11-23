@@ -560,6 +560,21 @@
 
     async function loadPreview(token) {
       currentAnswers = loadAnswersFromStorage();
+      if (!currentAnswers || Object.keys(currentAnswers).length === 0) {
+        try {
+          const ansResp = await fetch(`${API_BASE_URL}/api/answers?document_id=${encodeURIComponent(currentDocId)}`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (ansResp.ok) {
+            const ansData = await ansResp.json();
+            if (ansData.success && ansData.answers && Object.keys(ansData.answers).length > 0) {
+              currentAnswers = ansData.answers;
+            }
+          }
+        } catch (e) {
+          console.warn("Could not fetch draft answers for preview:", e);
+        }
+      }
 
       try {
         const resp = await fetch(`${API_BASE_URL}/api/preview`, {

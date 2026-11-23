@@ -12,6 +12,7 @@ Completely independent of Gemini.
 """
 
 import re
+import datetime
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -106,6 +107,26 @@ _SUGGESTIONS: dict[str, tuple[str, str]] = {
     "phone_dummy": (
         "This looks like a placeholder or test number. Please enter your real mobile number.",
         "இது ஒரு தவறான அல்லது போலி எண்ணாக தெரிகிறது. உண்மையான மொபைல் எண்ணை உள்ளிடவும்.",
+    ),
+    "date_invalid": (
+        "The date entered is invalid or does not exist (e.g. 31/02/2026). Please enter a valid date in DD/MM/YYYY or YYYY-MM-DD format.",
+        "உள்ளிட்ட தேதி தவறானது அல்லது இல்லாத தேதி (எ.கா. 31/02/2026). DD/MM/YYYY அல்லது YYYY-MM-DD வடிவில் சரியான தேதியை உள்ளிடவும்.",
+    ),
+    "date_invalid_format": (
+        "The date format is not recognized. Please use DD/MM/YYYY or YYYY-MM-DD (e.g. 15/08/2005).",
+        "தேதி வடிவம் ஏற்றுக்கொள்ளப்படவில்லை. DD/MM/YYYY அல்லது YYYY-MM-DD (எ.கா. 15/08/2005) வடிவத்தைப் பயன்படுத்தவும்.",
+    ),
+    "date_year_out_of_range": (
+        "The year in the date must be between 1900 and 2100. Please check the year.",
+        "தேதியில் உள்ள ஆண்டு 1900 முதல் 2100 வரை இருக்க வேண்டும். ஆண்டை சரிபார்க்கவும்.",
+    ),
+    "number_non_numeric": (
+        "This field requires a numeric value. Please remove letters or special characters.",
+        "இந்த புலத்திற்கு எண் மதிப்பு மட்டுமே தேவை. எழுத்துகள் அல்லது சிறப்பு குறியீடுகளை நீக்கவும்.",
+    ),
+    "number_invalid_format": (
+        "The numeric format is invalid. Please enter a valid integer or decimal number (e.g. 85 or 92.5).",
+        "எண் வடிவம் தவறானது. சரியான முழு எண் அல்லது தசம எண்ணை (எ.கா. 85 அல்லது 92.5) உள்ளிடவும்.",
     ),
     "generic_invalid": (
         "The value entered does not appear to be valid. Please check and correct it.",
@@ -264,6 +285,171 @@ def validate_indian_mobile(phone: str) -> tuple[bool, list[str]]:
 
 
 # ---------------------------------------------------------------------------
+# Date validation
+# ---------------------------------------------------------------------------
+
+DATE_NUMERIC_PATTERNS = [
+    # (regex, strptime_format)
+    (re.compile(r"^\d{1,2}/\d{1,2}/\d{4}$"), "%d/%m/%Y"),
+    (re.compile(r"^\d{1,2}-\d{1,2}-\d{4}$"), "%d-%m-%Y"),
+    (re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}$"), "%d.%m.%Y"),
+    (re.compile(r"^\d{4}-\d{1,2}-\d{1,2}$"), "%Y-%m-%d"),
+    (re.compile(r"^\d{4}/\d{1,2}/\d{1,2}$"), "%Y/%m/%d"),
+    (re.compile(r"^\d{4}\.\d{1,2}\.\d{1,2}$"), "%Y.%m.%d"),
+    (re.compile(r"^\d{1,2}/\d{1,2}/\d{2}$"), "%d/%m/%y"),
+    (re.compile(r"^\d{1,2}-\d{1,2}-\d{2}$"), "%d-%m-%y"),
+    (re.compile(r"^\d{1,2}\.\d{1,2}\.\d{2}$"), "%d.%m.%y"),
+]
+
+DATE_TEXTUAL_FORMATS = [
+    "%d %b %Y",
+    "%d %B %Y",
+    "%d-%b-%Y",
+    "%d-%B-%Y",
+    "%b %d, %Y",
+    "%B %d, %Y",
+    "%b %d %Y",
+    "%B %d %Y",
+    "%d %b %y",
+    "%d-%b-%y",
+]
+
+def validate_date(date_val: str) -> tuple[bool, list[str]]:
+    """
+    Validate a date string strictly.
+    Rejects impossible calendar dates (e.g. 31/02/2026, 29/02/2025 non-leap).
+    Supports Indian formats (DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY),
+    ISO format (YYYY-MM-DD), 2-digit years, and textual month names.
+    Enforces reasonable year range (1900-2100).
+    Returns (is_valid, list_of_error_codes).
+    """
+    errors: list[str] = []
+    if not isinstance(date_val, str):
+        date_val = str(date_val)
+    raw = date_val.strip()
+    if not raw:
+        return False, ["date_invalid_format"]
+
+    parsed_date = None
+
+    # Check numeric patterns first
+    matched_pattern = False
+    for pattern, fmt in DATE_NUMERIC_PATTERNS:
+        if pattern.match(raw):
+            matched_pattern = True
+            try:
+                dt = datetime.datetime.strptime(raw, fmt).date()
+                parsed_date = dt
+                break
+            except ValueError:
+                # Shape matched a date format, but calendar values are impossible (e.g. 31/02/2026)
+                errors.append("date_invalid")
+                return False, errors
+
+    if not matched_pattern:
+        # Check textual month formats (e.g. 15 Aug 2005, 15-May-2005)
+        cleaned_text = re.sub(r"\s+", " ", raw)
+        for fmt in DATE_TEXTUAL_FORMATS:
+            try:
+                dt = datetime.datetime.strptime(cleaned_text, fmt).date()
+                parsed_date = dt
+                break
+            except ValueError:
+                continue
+
+    if parsed_date is None:
+        if not errors:
+            errors.append("date_invalid_format")
+        return False, errors
+
+    # Check reasonable year bounds (1900 - 2100)
+    if parsed_date.year < 1900 or parsed_date.year > 2100:
+        errors.append("date_year_out_of_range")
+        return False, errors
+
+    return True, []
+
+
+# ---------------------------------------------------------------------------
+# Numeric validation
+# ---------------------------------------------------------------------------
+
+def validate_number(num_val: str) -> tuple[bool, list[str]]:
+    """
+    Validate a numeric field strictly.
+    Rejects alphabetic text in numeric fields.
+    Accepts integers, decimals, negative/positive numbers, percentages (85%),
+    Indian/Western thousand commas (1,50,000), Indian PIN codes (600 001),
+    and formatted phone/digit groupings (+91 98765 43210).
+    Returns (is_valid, list_of_error_codes).
+    """
+    errors: list[str] = []
+    if not isinstance(num_val, str):
+        num_val = str(num_val)
+    raw = num_val.strip()
+    if not raw:
+        return False, ["number_invalid_format"]
+
+    # Reject any alphabetic text in strictly numeric fields
+    if re.search(r"[a-zA-Z]", raw):
+        errors.append("number_non_numeric")
+        return False, errors
+
+    # Reject malformed consecutive delimiters or signs
+    if any(p in raw for p in ("--", "++", "+-", "-+", ",,", "..")):
+        errors.append("number_invalid_format")
+        return False, errors
+
+    cleaned = raw
+
+    # 1. Allow optional trailing '%' for percentages (e.g. 85.5%, 90 %)
+    if cleaned.endswith("%"):
+        cleaned = cleaned[:-1].strip()
+
+    # 2. Allow Indian/Western thousand-separating commas between digits (e.g. 1,50,000 or 150,000)
+    if "," in cleaned:
+        if not re.match(r"^[\+\-]?\d+(,\d+)*(\.\d+)?$", cleaned):
+            errors.append("number_invalid_format")
+            return False, errors
+        cleaned = cleaned.replace(",", "")
+
+    # 3. Handle optional single leading '+' or '-'
+    if cleaned.startswith("+") or cleaned.startswith("-"):
+        cleaned = cleaned[1:]
+
+    # 4. Allow space or hyphen grouping for phone numbers / PIN codes / ID numbers (e.g. 600 001, +91 98765-43210)
+    if " " in cleaned or "-" in cleaned:
+        if not re.match(r"^\d+([\s\-]\d+)*(\.\d+)?$", cleaned):
+            errors.append("number_invalid_format")
+            return False, errors
+        cleaned = re.sub(r"[\s\-]+", "", cleaned)
+
+    # Must contain at least one digit
+    if not cleaned:
+        errors.append("number_invalid_format")
+        return False, errors
+
+    # Check decimal formatting
+    if "." in cleaned:
+        parts = cleaned.split(".")
+        if len(parts) != 2:
+            errors.append("number_invalid_format")
+            return False, errors
+        if not (parts[0].isdigit() or not parts[0]) or not (parts[1].isdigit() or not parts[1]):
+            errors.append("number_invalid_format")
+            return False, errors
+        if not parts[0] and not parts[1]:
+            errors.append("number_invalid_format")
+            return False, errors
+    else:
+        if not cleaned.isdigit():
+            errors.append("number_invalid_format")
+            return False, errors
+
+    return True, []
+
+
+# ---------------------------------------------------------------------------
 # Suggestion builder
 # ---------------------------------------------------------------------------
 
@@ -382,8 +568,17 @@ def validate_field(
         if not ok:
             errors.extend(fmt_errors)
 
-    # Other types (text, number, date) - no deterministic format check here.
-    # Number/date validation can be added in future steps.
+    elif field_type in ("date", "dob", "birth_date"):
+        ok, fmt_errors = validate_date(answer_str)
+        if not ok:
+            errors.extend(fmt_errors)
+
+    elif field_type in ("number", "numeric", "integer", "float", "decimal"):
+        ok, fmt_errors = validate_number(answer_str)
+        if not ok:
+            errors.extend(fmt_errors)
+
+    # General text and unconstrained types have no format restriction beyond non-empty check.
 
     if errors:
         suggestions_en, suggestions_ta = _build_suggestions(errors, language)

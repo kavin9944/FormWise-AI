@@ -445,7 +445,7 @@ def health():
         "message": "Backend is healthy",
         "firebase_admin_initialized": bool(firebase_admin._apps),
         "firestore_initialized": bool(firestore_client is not None)
-    })
+    }), 200
 
 
 # ---------------------------------------------------------------------------
@@ -508,14 +508,13 @@ def _get_user_document_path(safe_uid: str, document_id: str) -> Optional[str]:
         return None
 
     user_upload_dir = os.path.join(BASE_UPLOAD_DIR, safe_uid)
-    if not os.path.exists(user_upload_dir):
-        return None
+    if os.path.exists(user_upload_dir):
+        for fname in os.listdir(user_upload_dir):
+            if fname.startswith(safe_doc_id + "."):
+                candidate = os.path.join(user_upload_dir, fname)
+                if os.path.commonpath([candidate, user_upload_dir]) == user_upload_dir and os.path.exists(candidate):
+                    return candidate
 
-    for fname in os.listdir(user_upload_dir):
-        if fname.startswith(safe_doc_id + "."):
-            candidate = os.path.join(user_upload_dir, fname)
-            if os.path.commonpath([candidate, user_upload_dir]) == user_upload_dir and os.path.exists(candidate):
-                return candidate
     return None
 
 
@@ -523,6 +522,7 @@ def _get_user_uploaded_documents(safe_uid: str) -> List[Dict[str, Any]]:
     """
     Retrieves all uploaded document metadata objects belonging to the authenticated user.
     Sources from Firestore native/REST client and reconciles with local storage files.
+    Filters out tombstoned/deleted documents.
     """
     documents: List[Dict[str, Any]] = []
     seen_doc_ids: set = set()
@@ -534,6 +534,8 @@ def _get_user_uploaded_documents(safe_uid: str) -> List[Dict[str, Any]]:
                 docs_ref = firestore_client.collection("users").document(safe_uid).collection("documents").stream()
                 for d in docs_ref:
                     doc_data = d.to_dict() or {}
+                    if doc_data.get("pending_deletion") or doc_data.get("status") in ("deleted", "pending_deletion"):
+                        continue
                     did = doc_data.get("document_id") or d.id
                     if did and did not in seen_doc_ids:
                         doc_data["document_id"] = did
@@ -542,6 +544,8 @@ def _get_user_uploaded_documents(safe_uid: str) -> List[Dict[str, Any]]:
             elif hasattr(firestore_client, "list_documents"):
                 rest_docs = firestore_client.list_documents(f"users/{safe_uid}/documents")
                 for d in rest_docs:
+                    if d.get("pending_deletion") in (True, "true", "True") or d.get("status") in ("deleted", "pending_deletion"):
+                        continue
                     did = d.get("document_id")
                     if did and did not in seen_doc_ids:
                         documents.append(d)
@@ -556,7 +560,7 @@ def _get_user_uploaded_documents(safe_uid: str) -> List[Dict[str, Any]]:
             for fname in os.listdir(user_upload_dir):
                 if "." in fname:
                     doc_id, ext = fname.rsplit(".", 1)
-                    if doc_id and doc_id not in seen_doc_ids:
+                    if ext.lower() in ALLOWED_EXTENSIONS and doc_id and doc_id not in seen_doc_ids:
                         documents.append({
                             "document_id": doc_id,
                             "original_filename": fname,
@@ -568,6 +572,220 @@ def _get_user_uploaded_documents(safe_uid: str) -> List[Dict[str, Any]]:
             print(f"Note: Error reading user storage files: {e}")
 
     return documents
+
+
+_answers_lock_registry = threading.Lock()
+_doc_locks: Dict[str, threading.Lock] = {}
+
+
+def _get_doc_lock(safe_uid: str, safe_doc_id: str) -> threading.Lock:
+    """Returns a process-wide mutex for serializing draft answer operations on a specific document."""
+    key = f"{safe_uid}:{safe_doc_id}"
+    with _answers_lock_registry:
+        if key not in _doc_locks:
+            _doc_locks[key] = threading.Lock()
+        return _doc_locks[key]
+
+
+def _get_saved_answers(safe_uid: str, safe_doc_id: str) -> Tuple[Dict[str, str], Optional[str], int, bool]:
+    """
+    Retrieves persisted draft answers for a user's document.
+    Checks Firestore first; falls back to local cache file if Firestore is unavailable.
+    Returns (answers_dict, updated_at_iso_str, version_int, cloud_synced_bool).
+    """
+    saved_answers: Dict[str, str] = {}
+    updated_at: Optional[str] = None
+    version: int = 0
+    cloud_synced: bool = False
+
+    if firestore_client:
+        try:
+            if hasattr(firestore_client, "collection"):
+                doc_ref = firestore_client.collection("users").document(safe_uid).collection("documents").document(safe_doc_id)
+                draft_snap = doc_ref.collection("answers").document("draft").get()
+                if draft_snap.exists:
+                    ddata = draft_snap.to_dict() or {}
+                    saved_answers = ddata.get("answers") or {}
+                    updated_at = ddata.get("updated_at")
+                    version = int(ddata.get("version") or ddata.get("answers_version") or 0)
+                    cloud_synced = True
+                else:
+                    doc_snap = doc_ref.get()
+                    if doc_snap.exists:
+                        ddata = doc_snap.to_dict() or {}
+                        saved_answers = ddata.get("answers") or {}
+                        updated_at = ddata.get("answers_updated_at")
+                        version = int(ddata.get("answers_version") or 0)
+                        cloud_synced = True
+            elif hasattr(firestore_client, "get_document"):
+                doc_data = firestore_client.get_document(f"users/{safe_uid}/documents", safe_doc_id)
+                if doc_data:
+                    saved_answers = doc_data.get("answers") or {}
+                    updated_at = doc_data.get("answers_updated_at")
+                    version = int(doc_data.get("answers_version") or 0)
+                    cloud_synced = True
+        except Exception as fe:
+            print(f"Note: Error querying Firestore for draft answers: {type(fe).__name__}")
+
+    # Fallback to local storage cache if Firestore has no answers or was unavailable
+    if not saved_answers:
+        user_dir = os.path.join(BASE_UPLOAD_DIR, safe_uid)
+        answers_file = os.path.join(user_dir, f"{safe_doc_id}_answers.json")
+        if os.path.exists(answers_file):
+            try:
+                with open(answers_file, "r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                    saved_answers = cached_data.get("answers") or {}
+                    if not updated_at:
+                        updated_at = cached_data.get("updated_at")
+                    version = int(cached_data.get("version") or 0)
+                    cloud_synced = False
+            except Exception as e:
+                print(f"Note: Error reading local answers cache: {type(e).__name__}")
+
+    # Ensure updated_at is a string
+    if isinstance(updated_at, (datetime.datetime, datetime.date)):
+        updated_at = updated_at.isoformat()
+
+    return saved_answers, updated_at, version, cloud_synced
+
+
+def _save_draft_answers(
+    safe_uid: str,
+    safe_doc_id: str,
+    incoming_answers: Dict[str, str],
+    clear: bool = False
+) -> Dict[str, Any]:
+    """
+    Persists draft answers for a user's document.
+    Synchronized via document-level lock to prevent concurrent write clobbering.
+    Uses Firestore transaction/merge with monotonic versioning.
+    Performs atomic local file writes (write-to-temp + os.replace).
+    Tracks Firestore and local cache write success independently.
+    Raises RuntimeError if both storage layers fail.
+    Returns dict with {merged_answers, updated_at, version, cloud_synced, storage_mode}.
+    """
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    with _get_doc_lock(safe_uid, safe_doc_id):
+        # 1. Fetch current persisted state
+        existing_answers, _, existing_version, _ = _get_saved_answers(safe_uid, safe_doc_id)
+
+        if clear:
+            merged_answers = dict(incoming_answers)
+        else:
+            if not incoming_answers and existing_answers:
+                merged_answers = dict(existing_answers)
+            else:
+                merged_answers = dict(existing_answers)
+                merged_answers.update(incoming_answers)
+
+        new_version = existing_version + 1
+        firestore_success = False
+        local_success = False
+
+        # 2. Update Firestore
+        if firestore_client:
+            update_payload = {
+                "answers": merged_answers,
+                "answers_updated_at": now_iso,
+                "answers_version": new_version,
+                "has_draft_answers": bool(merged_answers)
+            }
+            try:
+                if hasattr(firestore_client, "collection"):
+                    doc_ref = firestore_client.collection("users").document(safe_uid).collection("documents").document(safe_doc_id)
+                    draft_ref = doc_ref.collection("answers").document("draft")
+
+                    # Try Firestore transactional update if supported
+                    txn_success = False
+                    if hasattr(firestore_client, "transaction") and callable(getattr(firestore_client, "transaction")):
+                        try:
+                            transaction = firestore_client.transaction()
+
+                            @admin_firestore.transactional
+                            def _txn_save(txn):
+                                snap = doc_ref.get(transaction=txn)
+                                curr = {}
+                                v = 0
+                                if snap.exists:
+                                    sdata = snap.to_dict() or {}
+                                    curr = sdata.get("answers") or {}
+                                    v = int(sdata.get("answers_version") or 0)
+                                if clear:
+                                    f_ans = dict(incoming_answers)
+                                else:
+                                    if not incoming_answers and curr:
+                                        f_ans = dict(curr)
+                                    else:
+                                        f_ans = dict(curr)
+                                        f_ans.update(incoming_answers)
+                                nv = max(v + 1, new_version)
+                                txn.set(doc_ref, {
+                                    "answers": f_ans,
+                                    "answers_updated_at": now_iso,
+                                    "answers_version": nv,
+                                    "has_draft_answers": bool(f_ans)
+                                }, merge=True)
+                                txn.set(draft_ref, {
+                                    "answers": f_ans,
+                                    "updated_at": now_iso,
+                                    "version": nv
+                                })
+                                return f_ans, nv
+
+                            res_ans, res_ver = _txn_save(transaction)
+                            merged_answers = res_ans
+                            new_version = res_ver
+                            txn_success = True
+                            firestore_success = True
+                        except Exception as txn_err:
+                            pass
+
+                    if not txn_success:
+                        doc_ref.set(update_payload, merge=True)
+                        draft_ref.set({"answers": merged_answers, "updated_at": now_iso, "version": new_version})
+                        firestore_success = True
+
+                elif hasattr(firestore_client, "update_document"):
+                    firestore_client.update_document(f"users/{safe_uid}/documents", safe_doc_id, update_payload)
+                    firestore_success = True
+            except Exception as fe:
+                print(f"Note: Error updating Firestore draft answers: {type(fe).__name__}")
+
+        # 3. Update local user storage cache (Atomic write-to-temp + os.replace)
+        try:
+            user_dir = os.path.join(BASE_UPLOAD_DIR, safe_uid)
+            os.makedirs(user_dir, exist_ok=True)
+            answers_file = os.path.join(user_dir, f"{safe_doc_id}_answers.json")
+            temp_file = os.path.join(user_dir, f"{safe_doc_id}_answers.json.tmp_{os.getpid()}_{threading.get_ident()}")
+
+            payload = {
+                "document_id": safe_doc_id,
+                "answers": merged_answers,
+                "updated_at": now_iso,
+                "version": new_version
+            }
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            os.replace(temp_file, answers_file)
+            local_success = True
+        except Exception as e:
+            print(f"Note: Error writing local answers file: {type(e).__name__}")
+            local_success = False
+
+        # 4. Check double-failure
+        if not firestore_success and not local_success:
+            raise RuntimeError("Failed to persist draft answers to cloud or local storage.")
+
+        storage_mode = "firestore" if firestore_success else "local_fallback"
+        return {
+            "merged_answers": merged_answers,
+            "updated_at": now_iso,
+            "version": new_version,
+            "cloud_synced": firestore_success,
+            "storage_mode": storage_mode
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -761,6 +979,7 @@ def upload_document():
     destination_path = os.path.join(user_upload_dir, stored_filename)
 
     try:
+        uploaded_file.seek(0)
         uploaded_file.save(destination_path)
     except Exception:
         return jsonify({
@@ -782,6 +1001,95 @@ def upload_document():
         "filename": original_filename,
         "file_type": ext.upper()
     }), 201
+
+
+@app.route("/api/documents", methods=["GET"])
+def get_user_documents():
+    """
+    Authenticated User Documents Endpoint.
+    Returns list of all documents belonging to the authenticated Firebase user.
+    """
+    safe_uid, auth_err = _authenticate_request()
+    if auth_err:
+        return auth_err
+
+    try:
+        raw_docs = _get_user_uploaded_documents(safe_uid)
+        formatted_docs = []
+
+        for d in raw_docs:
+            did = d.get("document_id")
+            if not did:
+                continue
+
+            ts = d.get("upload_timestamp") or d.get("created_at") or d.get("timestamp")
+            if isinstance(ts, (datetime.datetime, datetime.date)):
+                ts_str = ts.isoformat()
+            elif ts:
+                ts_str = str(ts)
+            else:
+                ts_str = None
+
+            with _analysis_cache_lock:
+                cached_analysis = _analysis_cache.get(did)
+            form_title = d.get("form_title")
+            if not form_title and cached_analysis and isinstance(cached_analysis, dict):
+                form_title = cached_analysis.get("form_title")
+
+            original_filename = d.get("original_filename") or f"{did}.{str(d.get('file_type', 'pdf')).lower()}"
+            ext = str(d.get("file_type", "PDF")).upper()
+
+            # Check draft persistence status accurately
+            cloud_draft = bool(d.get("answers") or d.get("has_draft_answers"))
+            local_draft = os.path.exists(os.path.join(BASE_UPLOAD_DIR, safe_uid, f"{did}_answers.json"))
+
+            if cloud_draft:
+                draft_status = "cloud_synced"
+                has_answers = True
+                cloud_synced = True
+                storage_mode = "firestore"
+            elif local_draft:
+                draft_status = "local_only"
+                has_answers = True
+                cloud_synced = False
+                storage_mode = "local_fallback"
+            else:
+                draft_status = "none"
+                has_answers = False
+                cloud_synced = False
+                storage_mode = "none"
+
+            formatted_docs.append({
+                "document_id": did,
+                "original_filename": original_filename,
+                "file_type": ext,
+                "upload_timestamp": ts_str,
+                "status": d.get("status", "uploaded"),
+                "form_title": form_title or original_filename or "Application Form",
+                "has_answers": has_answers,
+                "draft_status": draft_status,
+                "cloud_synced": cloud_synced,
+                "storage_mode": storage_mode
+            })
+
+        def _sort_key(doc_item):
+            t = doc_item.get("upload_timestamp")
+            return str(t) if t else ""
+
+        formatted_docs.sort(key=_sort_key, reverse=True)
+
+        return jsonify({
+            "success": True,
+            "documents": formatted_docs,
+            "count": len(formatted_docs)
+        }), 200
+
+    except Exception as err:
+        print(f"Error retrieving documents for user {safe_uid}: {err}")
+        return jsonify({
+            "success": False,
+            "error": "Failed to retrieve documents."
+        }), 500
 
 
 @app.route("/api/extract", methods=["POST"])
@@ -1550,6 +1858,140 @@ def preview_form():
     }), 200
 
 
+@app.route("/api/answers", methods=["GET"])
+@app.route("/api/answers/<document_id>", methods=["GET"])
+def get_student_answers(document_id: Optional[str] = None):
+    """
+    Authenticated Form Answers Retrieval Endpoint.
+    Retrieves saved draft answers for a specific document owned by the student.
+    """
+    safe_uid, auth_err = _authenticate_request()
+    if auth_err:
+        return auth_err
+
+    doc_id = document_id or request.args.get("document_id") or request.args.get("doc_id")
+    if not doc_id or not isinstance(doc_id, str) or not doc_id.strip():
+        return jsonify({
+            "success": False,
+            "error": "Missing required query parameter: 'document_id'."
+        }), 400
+
+    safe_doc_id = re.sub(r"[^a-zA-Z0-9_\-]", "", doc_id.strip())
+    if not safe_doc_id:
+        return jsonify({
+            "success": False,
+            "error": "Invalid document ID format."
+        }), 400
+
+    target_file = _get_user_document_path(safe_uid, safe_doc_id)
+    if not target_file:
+        return jsonify({
+            "success": False,
+            "error": "Document not found in user storage."
+        }), 404
+
+    try:
+        saved_answers, updated_at, version, cloud_synced = _get_saved_answers(safe_uid, safe_doc_id)
+        return jsonify({
+            "success": True,
+            "document_id": safe_doc_id,
+            "answers": saved_answers,
+            "updated_at": updated_at,
+            "version": version,
+            "cloud_synced": cloud_synced,
+            "storage_mode": "firestore" if cloud_synced else ("local_fallback" if saved_answers else "none")
+        }), 200
+    except Exception as err:
+        print(f"Error fetching answers for doc {safe_doc_id}: {type(err).__name__}")
+        return jsonify({
+            "success": False,
+            "error": "Failed to retrieve saved answers."
+        }), 500
+
+
+@app.route("/api/answers", methods=["POST"])
+def save_student_answers():
+    """
+    Authenticated Form Answers Draft Persistence Endpoint.
+    Saves and merges form answers draft for a student's document.
+    """
+    safe_uid, auth_err = _authenticate_request()
+    if auth_err:
+        return auth_err
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({
+            "success": False,
+            "error": "Request body must be a valid JSON object."
+        }), 400
+
+    document_id = body.get("document_id")
+    if not document_id or not isinstance(document_id, str) or not document_id.strip():
+        return jsonify({
+            "success": False,
+            "error": "Missing required field: 'document_id'."
+        }), 400
+
+    safe_doc_id = re.sub(r"[^a-zA-Z0-9_\-]", "", document_id.strip())
+    if not safe_doc_id:
+        return jsonify({
+            "success": False,
+            "error": "Invalid document ID format."
+        }), 400
+
+    answers = body.get("answers")
+    if answers is None or not isinstance(answers, dict):
+        return jsonify({
+            "success": False,
+            "error": "Missing or invalid required field: 'answers'."
+        }), 400
+
+    target_file = _get_user_document_path(safe_uid, safe_doc_id)
+    if not target_file:
+        return jsonify({
+            "success": False,
+            "error": "Document not found in user storage."
+        }), 404
+
+    # Sanitize incoming answers
+    clean_answers: Dict[str, str] = {}
+    for k, v in answers.items():
+        if len(clean_answers) >= 500:
+            break
+        k_str = str(k).strip()[:100]
+        if not k_str:
+            continue
+        v_str = "" if v is None else str(v)[:5000]
+        clean_answers[k_str] = v_str
+
+    clear_flag = bool(body.get("clear", False))
+
+    try:
+        save_res = _save_draft_answers(
+            safe_uid=safe_uid,
+            safe_doc_id=safe_doc_id,
+            incoming_answers=clean_answers,
+            clear=clear_flag
+        )
+        return jsonify({
+            "success": True,
+            "message": "Draft answers saved successfully.",
+            "document_id": safe_doc_id,
+            "saved_count": len(save_res["merged_answers"]),
+            "updated_at": save_res["updated_at"],
+            "version": save_res["version"],
+            "cloud_synced": save_res["cloud_synced"],
+            "storage_mode": save_res["storage_mode"]
+        }), 200
+    except Exception as err:
+        print(f"Error saving answers for doc {safe_doc_id}: {type(err).__name__}")
+        return jsonify({
+            "success": False,
+            "error": "Failed to persist draft answers to storage."
+        }), 500
+
+
 @app.route("/api/download-pdf", methods=["POST"])
 def download_pdf():
     """
@@ -1662,6 +2104,118 @@ def download_pdf():
             "Content-Length": str(len(pdf_bytes)),
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Storage Management & Maintenance Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/api/document/<document_id>", methods=["DELETE"])
+@app.route("/api/document/delete", methods=["POST"])
+def delete_student_document(document_id: Optional[str] = None):
+    """
+    Authenticated Document Deletion Endpoint:
+    1. Authenticates student via Firebase ID token.
+    2. Validates document ownership and safe identifier formats.
+    3. Executes safe deletion of document metadata, file, and draft answers.
+    """
+    safe_uid, auth_err = _authenticate_request()
+    if auth_err:
+        return auth_err
+
+    if not document_id:
+        data = request.get_json(silent=True) or {}
+        document_id = data.get("document_id") or request.form.get("document_id")
+
+    if not document_id:
+        return jsonify({
+            "success": False,
+            "error": "Missing required field: 'document_id'."
+        }), 400
+
+    safe_doc_id = re.sub(r"[^a-zA-Z0-9_\-]", "", str(document_id))
+    if not safe_doc_id:
+        return jsonify({
+            "success": False,
+            "error": "Invalid document ID format."
+        }), 400
+
+    # Verify server-side ownership: Document must exist in user's isolated storage or Firestore
+    target_path = _get_user_document_path(safe_uid, safe_doc_id)
+    fs_doc_exists = False
+    if firestore_client:
+        try:
+            if hasattr(firestore_client, "collection"):
+                snap = firestore_client.collection("users").document(safe_uid).collection("documents").document(safe_doc_id).get()
+                fs_doc_exists = snap.exists
+            elif hasattr(firestore_client, "get_document"):
+                doc_d = firestore_client.get_document(f"users/{safe_uid}/documents", safe_doc_id)
+                fs_doc_exists = bool(doc_d)
+        except Exception as e:
+            print(f"Note: Error checking document existence in Firestore: {type(e).__name__}")
+
+    local_ans_path = os.path.join(BASE_UPLOAD_DIR, safe_uid, f"{safe_doc_id}_answers.json")
+    has_local_ans = os.path.exists(local_ans_path)
+
+    if not target_path and not fs_doc_exists and not has_local_ans:
+        return jsonify({
+            "success": False,
+            "error": "Document not found in user storage."
+        }), 404
+
+    # Explicitly clean up draft answers subcollection first
+    draft_cleanup_ok = True
+    if firestore_client:
+        try:
+            if hasattr(firestore_client, "collection"):
+                doc_ref = firestore_client.collection("users").document(safe_uid).collection("documents").document(safe_doc_id)
+                doc_ref.collection("answers").document("draft").delete()
+            elif hasattr(firestore_client, "delete_document"):
+                firestore_client.delete_document(f"users/{safe_uid}/documents/{safe_doc_id}/answers", "draft")
+        except Exception as fs_sub_err:
+            print(f"Warning: Failed to delete draft answers subcollection in Firestore: {type(fs_sub_err).__name__}")
+            draft_cleanup_ok = False
+
+    if not draft_cleanup_ok:
+        return jsonify({
+            "success": False,
+            "error": "Failed to clean up draft answers. Document deletion aborted to prevent orphaned personal data."
+        }), 500
+
+    # Delete document record from Firestore
+    if firestore_client:
+        try:
+            if hasattr(firestore_client, "collection"):
+                doc_ref = firestore_client.collection("users").document(safe_uid).collection("documents").document(safe_doc_id)
+                doc_ref.delete()
+            elif hasattr(firestore_client, "delete_document"):
+                firestore_client.delete_document(f"users/{safe_uid}/documents", safe_doc_id)
+        except Exception as fs_del_err:
+            print(f"Warning: Failed to delete document from Firestore: {type(fs_del_err).__name__}")
+            return jsonify({
+                "success": False,
+                "error": "Failed to delete document from database."
+            }), 500
+
+    # Delete local file if present
+    if target_path and os.path.exists(target_path):
+        try:
+            os.remove(target_path)
+        except Exception as file_err:
+            print(f"Warning: Failed to delete local file {target_path}: {file_err}")
+
+    # Remove local answers cache if present
+    if os.path.exists(local_ans_path):
+        try:
+            os.remove(local_ans_path)
+        except Exception:
+            pass
+
+    return jsonify({
+        "success": True,
+        "message": "Document deleted successfully.",
+        "document_id": safe_doc_id
+    }), 200
 
 
 # ---------------------------------------------------------------------------
